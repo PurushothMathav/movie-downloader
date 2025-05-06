@@ -24,20 +24,63 @@ def search_movie(movie_name, csv_file='MovieDB.csv'):
 
 def fetch_real_mp4_url(stream_page_url):
     try:
+        import os
+        print(f"Checking Playwright browser path: {os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'Not set')}")
+        
+        # Create a debug log to verify installation
+        try:
+            import subprocess
+            result = subprocess.run(['ls', '-la', '/home/render/.cache/ms-playwright'], capture_output=True, text=True)
+            print(f"Browser directory contents: {result.stdout}")
+        except Exception as e:
+            print(f"Failed to list browser directory: {e}")
+        
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            # More explicit browser launch with additional options
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    '--disable-gpu',
+                    '--disable-dev-shm-usage',
+                    '--disable-setuid-sandbox',
+                    '--no-sandbox',
+                ]
+            )
             page = browser.new_page()
             mp4_url = None
 
             def handle_response(response):
                 nonlocal mp4_url
-                if ".mp4" in response.url:
-                    mp4_url = response.url
+                try:
+                    if ".mp4" in response.url:
+                        mp4_url = response.url
+                        print(f"Found MP4 URL: {mp4_url}")
+                except Exception as e:
+                    print(f"Error in response handler: {e}")
 
             page.on("response", handle_response)
             print(f"Opening page: {stream_page_url}")
-            page.goto(stream_page_url, timeout=60000)
-            page.wait_for_timeout(5000)
+            
+            try:
+                page.goto(stream_page_url, timeout=60000)
+                # Increase timeout to ensure page loads completely
+                page.wait_for_timeout(10000)
+                
+                # Alternative method to find MP4 URLs in case the response handler misses them
+                if not mp4_url:
+                    print("Trying alternative MP4 detection method...")
+                    # Look for video elements or links that might contain MP4 content
+                    video_srcs = page.evaluate('''() => {
+                        const videoElements = Array.from(document.querySelectorAll('video source'));
+                        return videoElements.map(el => el.src).filter(src => src.includes('.mp4'));
+                    }''')
+                    
+                    if video_srcs and len(video_srcs) > 0:
+                        mp4_url = video_srcs[0]
+                        print(f"Found MP4 URL through DOM: {mp4_url}")
+            except Exception as page_error:
+                print(f"Page navigation error: {page_error}")
+            
             browser.close()
             return mp4_url
     except Exception as e:
