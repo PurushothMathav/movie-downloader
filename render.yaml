@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: movie-downloader
+    env: python
+    buildCommand: |
+      pip install -r requirements.txt
+      python -m playwright install chromium
+    startCommand: gunicorn wsgi:app
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /opt/render/.playwright
+      - key: PYTHON_VERSION
+        value: 3.9.13
+    disk:
+      name: movie-data
+      mountPath: /opt/render/project/src/downloads
+      sizeGB: 10
